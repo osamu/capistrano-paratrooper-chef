@@ -183,6 +183,16 @@ Capistrano::Configuration.instance.load do
 
     namespace :chef do
       task :default, :except => { :no_release => true } do
+        before_execute
+        chef.execute
+      end
+
+      task :why_run, :except => { :no_release => true } do
+        before_execute
+        chef.execute_why_run
+      end
+
+      task :before_execute, :except => { :no_release => true } do
         run_list.discover
         run_list.ensure
         kitchen.ensure_cookbooks
@@ -190,7 +200,6 @@ Capistrano::Configuration.instance.load do
         kitchen.upload
         chef.generate_solo_rb
         chef.generate_solo_json
-        chef.execute
       end
 
       task :solo, :except => { :no_release => true } do
@@ -227,6 +236,20 @@ Capistrano::Configuration.instance.load do
       task :execute, :except => { :no_release => true } do
         logger.info "Now running chef-solo"
         command = "#{chef_solo_path} -c #{remote_path("solo.rb")} -j #{remote_path("solo.json")}#{' -l debug' if fetch(:chef_debug)}"
+        if run_list.unique?
+          sudo command
+        else
+          parallel do |session|
+            session.when "options[:chef_attributes]['run_list'].size > 0",
+              "#{sudocmd} #{command}"
+          end
+        end
+      end
+
+      desc "why-run chef-solo"
+      task :execute_why_run, :except => { :no_release => true } do
+        logger.info "Now running why-run chef-solo"
+        command = "#{chef_solo_path} -c #{remote_path("solo.rb")} -j #{remote_path("solo.json")} -l fatal --why-run"
         if run_list.unique?
           sudo command
         else
