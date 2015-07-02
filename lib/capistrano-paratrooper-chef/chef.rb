@@ -18,6 +18,7 @@ require "json"
 require "tempfile"
 require "capistrano-paratrooper-chef/tar_writer"
 require "capistrano-paratrooper-chef/version"
+require "capistrano-paratrooper-chef/dsl"
 
 
 Capistrano::Configuration.instance.load do
@@ -125,13 +126,14 @@ Capistrano::Configuration.instance.load do
 
       def discover
         find_servers_for_task(current_task).each do |server|
+          server.options[:chef_attributes] ||= {}
           solo_json_paths = solo_json_paths_for(server.host)
           solo_json_paths.each do |path|
             next  if not File.exist?(path)
 
             begin
               open(path) do |fd|
-                server.options[:chef_attributes] = JSON.load(fd)
+                server.options[:chef_attributes] = JSON.load(fd).merge(server.options[:chef_attributes])
 
                 if server.options[:chef_attributes]["run_list"].nil?
                   server.options[:chef_attributes]["run_list"] = []
@@ -145,12 +147,15 @@ Capistrano::Configuration.instance.load do
             end
           end
 
-          if server.options[:chef_attributes].nil?
+          if server.options[:chef_attributes].empty?
             logger.important("any JSON file not found: %s" % solo_json_paths.inspect)
-            server.options[:chef_attributes] = {"run_list" => []}
           end
 
-          if fetch(:chef_roles_auto_discovery)
+          if server.options[:chef_attributes]["run_list"].nil?
+            server.options[:chef_attributes]["run_list"] = []
+          end
+
+        if fetch(:chef_roles_auto_discovery)
             role_names_for_host(server).each do |role|
               server.options[:chef_attributes]["run_list"] << "role[#{role}]"  if role_exists?(role)
             end
